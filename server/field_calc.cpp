@@ -50,8 +50,10 @@ void map_init(float (&fmap)[size_x][size_y], int size, int value){
 int main(){
     float map[MAP_SIZE][MAP_SIZE];
     map_init(map, MAP_SIZE, 0);
-    float x, y, m;
-    cin >> x >> y >> m;
-    field_accum(map, MAP_SIZE, x, y, m);
-    print_map(map, MAP_SIZE);
+    while(1){
+        float x, y, m;
+        cin >> x >> y >> m;
+        field_accum(map, MAP_SIZE, x, y, m);
+        print_map(map, MAP_SIZE);
+    }
 }
