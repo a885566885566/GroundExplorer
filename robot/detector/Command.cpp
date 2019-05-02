@@ -5,7 +5,7 @@ CmdQueue::CmdQueue(){
 
 void CmdQueue::feedCmd(String s){
     Command cmd;
-    if( cmdResolve(cmd, s) == true ){
+    if( cmdResolve(&cmd, s) == true ){
         cmd_queue.enqueue(cmd);
     }
     else{
@@ -17,7 +17,7 @@ bool CmdQueue::cmdResolve(Command* cmd, String s){
     int start_index = s.indexOf('?') + 2;   
     int end_index = 0;
     // Ignore all msg before the first '?'
-    String sub = s.subString(start_index);
+    String sub = s.substring(start_index);
     int counter = 0;    // Counter for column of data
     while(start_index != -1){
         end_index = sub.indexOf('?');
@@ -26,7 +26,7 @@ bool CmdQueue::cmdResolve(Command* cmd, String s){
         // start -> inclusive
         // end   -> exclusive
         if(end_index == -1) msg = sub;  // Last one
-        else                msg = sub.subString(start_index, end_index);
+        else                msg = sub.substring(start_index, end_index);
         
         if(counter == 0)      cmd->mode = msg.toInt();
         else if (counter==1)  cmd->time_stamp = msg.toInt();
@@ -45,7 +45,9 @@ Command CmdQueue::dequeue(){
     if(!cmd_queue.isEmpty()){
         return cmd_queue.dequeue();
     }
-    return NULL;
+    Command cmd;
+    cmd.mode = NULL;
+    return cmd;
 }
 void CmdQueue::worker(){
     //if()

@@ -3,8 +3,8 @@
 
 #include <Arduino.h>
 
-#define SONAR_TRIG_PIN D5
-#define SONAR_ECHO_PIN D6
+#define SONAR_TRIG_PIN 2 //D4
+#define SONAR_ECHO_PIN 0 //D3
 
 #define ERROR( msg ) Serial.println(msg);
 
