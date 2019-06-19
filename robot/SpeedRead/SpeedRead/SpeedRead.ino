@@ -2,15 +2,14 @@
 //#include"smoothpath.h"
 #include"PID_Controller.h"
 #include "QueueArray/QueueArray.h"
+#include "ServerConnection.h"
 // pointer of timer
 hw_timer_t *encoder_timer = NULL;
 portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
 
-
-
 #define d_t 0.025          // 25ms
 
-volatile int Car_rotary_offset[2] = {0};
+volatile double Car_rotary_offset[2] = {0};
 volatile double Car_position[2] = {0};
 volatile double Car_theta = 0;
 
@@ -27,6 +26,7 @@ typedef struct Car{
     volatile double v;//速度
     volatile double w;//角速度
 }Car;
+
 inline void rest_car(volatile Car *t, double tx, double ty, double tt, double tv, double tw){
     t->x = tx; t->y = ty; t->theta = tt; t->v = tv; t->w = tw;
 }
@@ -129,6 +129,9 @@ inline void wheel_velocity()
     wr_cmd=next.v/r_w+0.5*d_w*next.w/r_w;
     wl_cmd=next.v/r_w-0.5*d_w*next.w/r_w;
 }
+// frame size= 100
+#define ENCODER_SUB_INTERVAL 10
+#define NUM_IN_FRAME 100
 
 //SmoothPath sp;
 void IRAM_ATTR onEncoderTimer() {
@@ -143,6 +146,14 @@ void IRAM_ATTR onEncoderTimer() {
     static volatile int left_counter = 0;
     static volatile byte left_offset = 0;
     static volatile byte left_binary[2] = {0};
+
+    static volatile byte right_sub_count[ENCODER_SUB_INTERVAL] = {0};
+    static volatile short right_sub_head = 1;
+    static volatile int right_accum_count = 0;
+    
+    static volatile byte left_sub_count[ENCODER_SUB_INTERVAL] = {0};
+    static volatile short left_sub_head = 1;
+    static volatile int left_accum_count = 0;
 
     /* =============Right Motor Encoder============= */
     // Obtain A,B Phase
@@ -174,10 +185,32 @@ void IRAM_ATTR onEncoderTimer() {
         else                                        left_counter++;
         left_binary[BINARY_PRE_STATE] = left_binary[BINARY_NOW_STATE];
     }
+    /* Moving Speed Calculating Model */
+    //
+    // |_|_|_|_|_|_|_|_|_|_|
+    //  ^
+    // head
+    // 
+    // accum will collect the last 1000 value, with frame size 100, that is, repeat again after 10 times
+    if(global_counter % NUM_IN_FRAME == 0){     // 1/10, 100
+        right_sub_head = (right_sub_head + 1) % ENCODER_SUB_INTERVAL;
+        right_accum_count -= right_sub_count[right_sub_head];       // Minus prevous value
+        right_sub_count[right_sub_head] = right_counter;            // Push new value
+        right_accum_count += right_sub_count[right_sub_head];       // Add new value
+        right_counter = 0;
+        Car_rotary_offset[RIGHT_MOTOR] = right_accum_count * WHEEL_ANGULAR_RATIO;
+        
+        left_sub_head = (left_sub_head + 1) % ENCODER_SUB_INTERVAL;
+        left_accum_count -= left_sub_count[left_sub_head];
+        left_sub_count[left_sub_head] = left_counter;
+        left_accum_count += left_sub_count[left_sub_head];
+        left_counter = 0;
+        Car_rotary_offset[LEFT_MOTOR] = left_accum_count * WHEEL_ANGULAR_RATIO;
+    }
     /* =============Global============= */
     if(global_counter >= SPEED_SAMPLE_COUNT){
-        Car_rotary_offset[RIGHT_MOTOR] = right_counter * WHEEL_ANGULAR_RATIO;   // Already consider dt
-        Car_rotary_offset[LEFT_MOTOR]  = left_counter * WHEEL_ANGULAR_RATIO;
+/*        Car_rotary_offset[RIGHT_MOTOR] = right_counter * WHEEL_ANGULAR_RATIO;   // Already consider dt
+        Car_rotary_offset[LEFT_MOTOR]  = left_counter * WHEEL_ANGULAR_RATIO;*/
 
         /* =======Calculate Absolute Position======= */  
         central_v = (Car_rotary_offset[LEFT_MOTOR] + Car_rotary_offset[RIGHT_MOTOR]) / 2;
@@ -195,9 +228,9 @@ void IRAM_ATTR onEncoderTimer() {
            Car_position[Y_AXIS] += central_v*sin(Car_theta)*d_t;
            }
            Car_theta = new_Car_theta;*/
-
+/*
         right_counter = 0;
-        left_counter = 0;
+        left_counter = 0;*/
         global_counter = 0;
 
         present.v = central_v;
@@ -209,8 +242,8 @@ void IRAM_ATTR onEncoderTimer() {
         wheel_velocity();
         set_car(&present, &next);
 
-        right_pwm = wr_cmd;
-        left_pwm = wl_cmd;    
+        right_pwm = wr_cmd * WHEEL_ANGULAR_RATIO;
+        left_pwm = wl_cmd * WHEEL_ANGULAR_RATIO;    
     }
     global_counter++;
     // portENTER_CRITICAL_ISR(&timerMux);
@@ -220,6 +253,7 @@ void IRAM_ATTR onEncoderTimer() {
 QueueArray<Car> targets;
 
 void setup() {
+    //wifi_init();
 
     pinMode(right_encoder_A, INPUT);
     pinMode(right_encoder_B, INPUT);
@@ -253,7 +287,14 @@ void setup() {
     timerAlarmEnable(encoder_timer);
 
     Car temp;
-    rest_car(&temp, 50, 10, 10, 50, 10);
+    /*
+     *     volatile double x;//x座標
+    volatile double y;//y座標
+    volatile double theta;//角度
+    volatile double v;//速度
+    volatile double w;//角速度
+    */
+    rest_car(&temp, 1000, 200, 10, 0, 0);
     //targets.enqueue(temp);
     //target = targets.dequeue();
     rest_car(&target, &temp);
@@ -263,13 +304,13 @@ void setup() {
     rest_car(&present, 0, 0, 0, 0, 0);
 }
 
-PID_Controller right_motor(2, 0.3, 0.001);
-PID_Controller left_motor(2, 0.3, 0.001);
+PID_Controller right_motor(12, 2, 0);
+PID_Controller left_motor(12, 2, 0);
 void loop() {
     ledcWrite(RIGHT_MOTOR_A_CHENNEL, 0);
     ledcWrite(LEFT_MOTOR_A_CHENNEL, 0);
     int r_out = right_motor.update(right_pwm, Car_rotary_offset[RIGHT_MOTOR]);
-    int l_out = left_motor.update(left_pwm, Car_rotary_offset[LEFT_MOTOR]);
+    int l_out = left_motor.update(-left_pwm, Car_rotary_offset[LEFT_MOTOR]);
     //int r_out = right_motor.update(50, Car_rotary_offset[RIGHT_MOTOR]);
     //int l_out = left_motor.update(50, Car_rotary_offset[LEFT_MOTOR]);
     ledcWrite(RIGHT_MOTOR_B_CHENNEL, r_out);
@@ -277,25 +318,36 @@ void loop() {
     Serial.print("cmd: ");
     Serial.print(right_pwm);
     Serial.print(", ");
-    Serial.print(left_pwm);
+    Serial.print(-left_pwm);
     Serial.print(", err: ");
-    Serial.print(e_x);
+    Serial.print(r_out);
     Serial.print(", ");
-    Serial.print(e_y);
+    Serial.print(l_out);
+    //Serial.print(", ");
+    //Serial.print(e_theta);
+    Serial.print(", pos: ");
+    Serial.print(present.x);
     Serial.print(", ");
-    Serial.print(e_theta);
-    Serial.print(", target: ");
-    Serial.print(target.x);
+    Serial.print(present.y);
     Serial.print(", ");
-    Serial.print(target.y);
+    //Serial.print(target.theta);
+    Serial.print(",  Velocity: ");
+    Serial.print(Car_rotary_offset[RIGHT_MOTOR]);
     Serial.print(", ");
-    Serial.print(target.theta);
+    Serial.println(Car_rotary_offset[LEFT_MOTOR]);
+    /*
+    String msg = "";
+    msg += present.x;
+    msg += ",";
+    msg += present.y;
+    send_data(msg);*/
+    /*
     Serial.print(", present: ");
     Serial.print(present.x);
     Serial.print(", ");
     Serial.print(present.y);
     Serial.print(", ");
-    Serial.println(present.theta);/*
+    Serial.println(present.theta);*//*
                                      Serial.print(r_out);
                                      Serial.print(", ");
                                      Serial.print(l_out);
@@ -313,7 +365,7 @@ void loop() {
     Serial.print(wr_cmd);
     Serial.print(", ");
     Serial.println(wl_cmd);*/
-    delay(25);
+    //delay(25);
     /*
        if(right_motor_speed > 0){
        portENTER_CRITICAL(&timerMux);

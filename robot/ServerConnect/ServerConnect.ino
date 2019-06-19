@@ -1,10 +1,11 @@
 #include <WiFi.h>
 
-const char* ssid = "yourNetworkName";
-const char* password =  "yourNetworkPass";
+const char* ssid = "e94066157-X550VQ";
+const char* password = "bpbfXOHT";
 
-const uint16_t port = 8090;
-const char * host = "192.168.1.83";
+const uint16_t port = 10418;
+//const char * host = "192.168.1.83";
+IPAddress server(10,42,0,1);
 
 void setup()
 {
@@ -26,11 +27,7 @@ void loop()
 {
     WiFiClient client;
 
-    if (!client.connect(host, port)) {
-        Serial.println("Connection to host failed");
-        delay(1000);
-        return;
-    }
+    
 
     Serial.println("Connected to server successful!");
 
@@ -39,8 +36,16 @@ void loop()
             Serial.println("Wifi disconnected!");
         }
         else{
-            client.print("Hello from ESP32!");
-            delay(1000);
+          if (!client.connect(server, port)) {
+                Serial.println("Connection to host failed");
+                delay(1000);
+                return;
+          }
+          String msg = "GET /data?esp_data=";
+          msg += millis();
+            client.println(msg);
+            client.println();
+            //delay(1000);
         }
     }
     Serial.println("Disconnecting...");
