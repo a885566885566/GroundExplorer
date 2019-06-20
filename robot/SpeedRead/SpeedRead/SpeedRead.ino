@@ -6,7 +6,7 @@
 // pointer of timer
 hw_timer_t *encoder_timer = NULL;
 portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
-#define ENABLE_WIFI
+//#define ENABLE_WIFI
 #define d_t 0.025          // 25ms
 
 volatile double Car_rotary_offset[2] = {0};
@@ -324,20 +324,42 @@ class Timer{
     unsigned long pre_time;
 };
 Timer timer_update(1000);
-PID_Controller right_motor(12, 2, 0);
-PID_Controller left_motor(12, 2, 0);
+//PID_Controller right_motor(12, 2, 0);
+//PID_Controller left_motor(12, 2, 0);
+PID_Controller right_motor(5, 0, 0);
+PID_Controller left_motor(5, 0, 0);
 void loop() {
-    ledcWrite(RIGHT_MOTOR_A_CHENNEL, 0);
-    ledcWrite(LEFT_MOTOR_A_CHENNEL, 0);
-    int r_out = right_motor.update(right_pwm, Car_rotary_offset[RIGHT_MOTOR]);
-    int l_out = left_motor.update(left_pwm, Car_rotary_offset[LEFT_MOTOR]);
-    //int r_out = right_motor.update(50, Car_rotary_offset[RIGHT_MOTOR]);
-    //int l_out = left_motor.update(50, Car_rotary_offset[LEFT_MOTOR]);
+    //ledcWrite(RIGHT_MOTOR_A_CHENNEL, 0);
+    //ledcWrite(LEFT_MOTOR_A_CHENNEL, 0);
+    right_pwm = -10;
+    left_pwm = -10;
+    //int r_out = right_motor.update(right_pwm, Car_rotary_offset[RIGHT_MOTOR]);
+    //int l_out = left_motor.update(left_pwm, Car_rotary_offset[LEFT_MOTOR]);
+    int r_out = right_motor.update(-10, Car_rotary_offset[RIGHT_MOTOR]);
+    int l_out = left_motor.update(-10, Car_rotary_offset[LEFT_MOTOR]);
+    if(r_out>=0){
     ledcWrite(RIGHT_MOTOR_B_CHENNEL, r_out);
+    ledcWrite(RIGHT_MOTOR_A_CHENNEL, 0);
+    }
+    else{
+    ledcWrite(RIGHT_MOTOR_A_CHENNEL, -r_out);
+    ledcWrite(RIGHT_MOTOR_B_CHENNEL, 0);
+    }
+    if(l_out>=0){
     ledcWrite(LEFT_MOTOR_B_CHENNEL, l_out);
+    ledcWrite(LEFT_MOTOR_A_CHENNEL, 0);
+    }
+    else{
+    ledcWrite(LEFT_MOTOR_A_CHENNEL, -l_out);
+    ledcWrite(LEFT_MOTOR_B_CHENNEL, 0);
+    }
+
+    
     #ifdef ENABLE_WIFI
     if(timer_update.update()){
       send_update(present.x, present.y, present.v, present.theta);
+    }
+    #endif
     Serial.print("cmd: ");
     Serial.print(right_pwm);
     Serial.print(", ");
@@ -358,8 +380,6 @@ void loop() {
     Serial.print(Car_rotary_offset[RIGHT_MOTOR]);
     Serial.print(", ");
     Serial.println(Car_rotary_offset[LEFT_MOTOR]);
-    }
-    #endif
     /*
     String msg = "";
     msg += present.x;

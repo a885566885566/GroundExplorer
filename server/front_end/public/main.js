@@ -1,8 +1,10 @@
 // Set the maximum number of input
 const num_input = 5;
 // Size of chart svg
-var width = 800;
-var height = 400;
+var width = 1400;
+var height = 1000;
+var offset_x = 700;
+var offset_y = 500;
 
 var socket = io.connect('http://' + document.domain + ':' + location.port + '/front');
 var svg = d3.select('svg')
@@ -15,10 +17,10 @@ socket.on('back_update', (data)=>{
     if(data['v'] > 0.1){
         if(!last_data) last_data = data;
         var line = svg.append("line")
-             .attr("x1", last_data['px'])  
-             .attr("y1", last_data['py'])  
-             .attr("x2", data['px'])  
-             .attr("y2", data['py'])  
+             .attr("x1", last_data['px'] + offset_x)  
+             .attr("y1", last_data['py'] + offset_y)  
+             .attr("x2", data['px'] + offset_x)  
+             .attr("y2", data['py'] + offset_y)  
              .attr("stroke","red")  
              .attr("stroke-width",2)  
              .attr("marker-end","url(#arrow)");
