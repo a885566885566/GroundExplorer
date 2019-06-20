@@ -1,0 +1,16 @@
+body{
+    background-color:#393E46;
+    color:#EEEEEE;
+    font-family:Microsoft JhengHei;
+}
+.input_div{
+    margin-right:10px;
+}
+.input_box{
+    margin:5px 5px 5px 0px;
+}
+circle {
+    fill: indianred;
+    opacity: 0.3;
+    stroke: white;
+}

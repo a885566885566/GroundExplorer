@@ -6,7 +6,7 @@
 // pointer of timer
 hw_timer_t *encoder_timer = NULL;
 portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
-
+#define ENABLE_WIFI
 #define d_t 0.025          // 25ms
 
 volatile double Car_rotary_offset[2] = {0};
@@ -242,8 +242,8 @@ void IRAM_ATTR onEncoderTimer() {
         wheel_velocity();
         set_car(&present, &next);
 
-        right_pwm = wr_cmd * WHEEL_ANGULAR_RATIO;
-        left_pwm = wl_cmd * WHEEL_ANGULAR_RATIO;    
+        right_pwm = wr_cmd * WHEEL_RADIUS;
+        left_pwm = wl_cmd * WHEEL_RADIUS;    
     }
     global_counter++;
     // portENTER_CRITICAL_ISR(&timerMux);
@@ -253,8 +253,10 @@ void IRAM_ATTR onEncoderTimer() {
 QueueArray<Car> targets;
 
 void setup() {
-    //wifi_init();
-
+    Serial.begin(115200);
+    #ifdef ENABLE_WIFI
+    wifi_init();
+    #endif
     pinMode(right_encoder_A, INPUT);
     pinMode(right_encoder_B, INPUT);
     pinMode(left_encoder_A, INPUT);
@@ -294,31 +296,52 @@ void setup() {
     volatile double v;//速度
     volatile double w;//角速度
     */
-    rest_car(&temp, 1000, 200, 10, 0, 0);
+    rest_car(&temp, 1000, 1000, 10, 0, 0);
     //targets.enqueue(temp);
     //target = targets.dequeue();
     rest_car(&target, &temp);
     //target = temp;
 
-    Serial.begin(115200);
     rest_car(&present, 0, 0, 0, 0, 0);
 }
 
+class Timer{
+  public:
+    int duration;
+    Timer(int dur){
+      duration = dur;
+      pre_time = millis();
+    }
+    bool update(){
+      unsigned long now_time = millis();
+      if(now_time-pre_time > duration){
+        pre_time = now_time;
+        return true;
+      }
+      return false;
+    }
+  private:
+    unsigned long pre_time;
+};
+Timer timer_update(1000);
 PID_Controller right_motor(12, 2, 0);
 PID_Controller left_motor(12, 2, 0);
 void loop() {
     ledcWrite(RIGHT_MOTOR_A_CHENNEL, 0);
     ledcWrite(LEFT_MOTOR_A_CHENNEL, 0);
     int r_out = right_motor.update(right_pwm, Car_rotary_offset[RIGHT_MOTOR]);
-    int l_out = left_motor.update(-left_pwm, Car_rotary_offset[LEFT_MOTOR]);
+    int l_out = left_motor.update(left_pwm, Car_rotary_offset[LEFT_MOTOR]);
     //int r_out = right_motor.update(50, Car_rotary_offset[RIGHT_MOTOR]);
     //int l_out = left_motor.update(50, Car_rotary_offset[LEFT_MOTOR]);
     ledcWrite(RIGHT_MOTOR_B_CHENNEL, r_out);
     ledcWrite(LEFT_MOTOR_B_CHENNEL, l_out);
+    #ifdef ENABLE_WIFI
+    if(timer_update.update()){
+      send_update(present.x, present.y, present.v, present.theta);
     Serial.print("cmd: ");
     Serial.print(right_pwm);
     Serial.print(", ");
-    Serial.print(-left_pwm);
+    Serial.print(left_pwm);
     Serial.print(", err: ");
     Serial.print(r_out);
     Serial.print(", ");
@@ -335,6 +358,8 @@ void loop() {
     Serial.print(Car_rotary_offset[RIGHT_MOTOR]);
     Serial.print(", ");
     Serial.println(Car_rotary_offset[LEFT_MOTOR]);
+    }
+    #endif
     /*
     String msg = "";
     msg += present.x;

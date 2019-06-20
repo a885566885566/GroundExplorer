@@ -1,6 +1,9 @@
 #ifndef _CONSTANTS_H
 #define _CONSTANTS_H
 
+#define ROBOT_ID "R01"
+#define MODE_UPDATE 0
+
 /* Pin Setting */
 #define right_encoder_A 34
 #define right_encoder_B 35
