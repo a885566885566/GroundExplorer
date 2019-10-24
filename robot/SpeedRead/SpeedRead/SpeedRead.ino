@@ -1,13 +1,19 @@
+
 #include "constants.h"
 //#include"smoothpath.h"
 #include"PID_Controller.h"
 #include "QueueArray/QueueArray.h"
 #include "ServerConnection.h"
+#include <Servo.h>
+#include <ArduinoJson.h>
+
 // pointer of timer
 hw_timer_t *encoder_timer = NULL;
 portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
-//#define ENABLE_WIFI
+#define ENABLE_WIFI
 #define d_t 0.025          // 25ms
+
+Servo ultraA;
 
 volatile double Car_rotary_offset[2] = {0};
 volatile double Car_position[2] = {0};
@@ -26,6 +32,14 @@ typedef struct Car{
     volatile double v;//速度
     volatile double w;//角速度
 }Car;
+typedef struct Point{
+    double x;
+    double y;
+}Point;
+typedef struct Obs{
+    Point p;
+    double v;
+}Obs;
 
 inline void rest_car(volatile Car *t, double tx, double ty, double tt, double tv, double tw){
     t->x = tx; t->y = ty; t->theta = tt; t->v = tv; t->w = tw;
@@ -64,8 +78,8 @@ Car present;
 Car next;
 Car target;
 
-const int a_max = 50;//最大加速度
-const int alpha_max = 50;//最大角加速度
+const int a_max = 1;//最大加速度
+const int alpha_max = 0.1;//最大角加速度
 const double sampling_time = 0.025;
 const double c_x = 0.1;//landing coefficient
 const double d_w = 103;//輪距
@@ -133,6 +147,9 @@ inline void wheel_velocity()
 #define ENCODER_SUB_INTERVAL 10
 #define NUM_IN_FRAME 100
 
+PID_Controller right_motor(4, 0.1, 0);
+PID_Controller left_motor(4, 0.1, 0);
+volatile int r_out, l_out;
 //SmoothPath sp;
 void IRAM_ATTR onEncoderTimer() {
     static volatile int global_counter = 0;
@@ -147,11 +164,11 @@ void IRAM_ATTR onEncoderTimer() {
     static volatile byte left_offset = 0;
     static volatile byte left_binary[2] = {0};
 
-    static volatile byte right_sub_count[ENCODER_SUB_INTERVAL] = {0};
+    static volatile short right_sub_count[ENCODER_SUB_INTERVAL] = {0};
     static volatile short right_sub_head = 1;
     static volatile int right_accum_count = 0;
     
-    static volatile byte left_sub_count[ENCODER_SUB_INTERVAL] = {0};
+    static volatile short left_sub_count[ENCODER_SUB_INTERVAL] = {0};
     static volatile short left_sub_head = 1;
     static volatile int left_accum_count = 0;
 
@@ -207,6 +224,11 @@ void IRAM_ATTR onEncoderTimer() {
         left_counter = 0;
         Car_rotary_offset[LEFT_MOTOR] = left_accum_count * WHEEL_ANGULAR_RATIO;
     }
+    if((global_counter + 50) % NUM_IN_FRAME == 0){     // 1/10, 100
+        r_out = right_motor.update(right_pwm, Car_rotary_offset[RIGHT_MOTOR]);
+        l_out = left_motor.update(left_pwm, Car_rotary_offset[LEFT_MOTOR]);
+        motor(l_out, r_out);
+    }
     /* =============Global============= */
     if(global_counter >= SPEED_SAMPLE_COUNT){
 /*        Car_rotary_offset[RIGHT_MOTOR] = right_counter * WHEEL_ANGULAR_RATIO;   // Already consider dt
@@ -251,6 +273,7 @@ void IRAM_ATTR onEncoderTimer() {
     // portEXIT_CRITICAL_ISR(&timerMux);
 }
 QueueArray<Car> targets;
+QueueArray<Obs> obs_qu;
 
 void setup() {
     Serial.begin(115200);
@@ -261,6 +284,9 @@ void setup() {
     pinMode(right_encoder_B, INPUT);
     pinMode(left_encoder_A, INPUT);
     pinMode(left_encoder_B, INPUT);
+    pinMode(ultraA_echo, INPUT);
+    pinMode(ultraA_trig, OUTPUT);
+    ultraA.attach(ultraA_servo);
     ledcSetup(RIGHT_MOTOR_A_CHENNEL, MOTOR_FREQ, MOTOR_PWM_RESOLUTION);
     ledcSetup(RIGHT_MOTOR_B_CHENNEL, MOTOR_FREQ, MOTOR_PWM_RESOLUTION);
     ledcSetup(LEFT_MOTOR_A_CHENNEL, MOTOR_FREQ, MOTOR_PWM_RESOLUTION);
@@ -323,93 +349,105 @@ class Timer{
   private:
     unsigned long pre_time;
 };
-Timer timer_update(1000);
-//PID_Controller right_motor(12, 2, 0);
-//PID_Controller left_motor(12, 2, 0);
-PID_Controller right_motor(5, 0, 0);
-PID_Controller left_motor(5, 0, 0);
-void loop() {
-    //ledcWrite(RIGHT_MOTOR_A_CHENNEL, 0);
-    //ledcWrite(LEFT_MOTOR_A_CHENNEL, 0);
-    right_pwm = -10;
-    left_pwm = -10;
-    //int r_out = right_motor.update(right_pwm, Car_rotary_offset[RIGHT_MOTOR]);
-    //int l_out = left_motor.update(left_pwm, Car_rotary_offset[LEFT_MOTOR]);
-    int r_out = right_motor.update(-10, Car_rotary_offset[RIGHT_MOTOR]);
-    int l_out = left_motor.update(-10, Car_rotary_offset[LEFT_MOTOR]);
+void motor(int l_out, int r_out){
     if(r_out>=0){
-    ledcWrite(RIGHT_MOTOR_B_CHENNEL, r_out);
-    ledcWrite(RIGHT_MOTOR_A_CHENNEL, 0);
+        ledcWrite(RIGHT_MOTOR_B_CHENNEL, r_out);
+        ledcWrite(RIGHT_MOTOR_A_CHENNEL, 0);
     }
     else{
-    ledcWrite(RIGHT_MOTOR_A_CHENNEL, -r_out);
-    ledcWrite(RIGHT_MOTOR_B_CHENNEL, 0);
+        ledcWrite(RIGHT_MOTOR_A_CHENNEL, -r_out);
+        ledcWrite(RIGHT_MOTOR_B_CHENNEL, 0);
     }
     if(l_out>=0){
-    ledcWrite(LEFT_MOTOR_B_CHENNEL, l_out);
-    ledcWrite(LEFT_MOTOR_A_CHENNEL, 0);
+        ledcWrite(LEFT_MOTOR_B_CHENNEL, l_out);
+        ledcWrite(LEFT_MOTOR_A_CHENNEL, 0);
     }
     else{
-    ledcWrite(LEFT_MOTOR_A_CHENNEL, -l_out);
-    ledcWrite(LEFT_MOTOR_B_CHENNEL, 0);
+        ledcWrite(LEFT_MOTOR_A_CHENNEL, -l_out);
+        ledcWrite(LEFT_MOTOR_B_CHENNEL, 0);
     }
+}
+Timer timer_update(1000);
+Timer timer_scan(100);
+//PID_Controller right_motor(12, 2, 0);
+//PID_Controller left_motor(12, 2, 0);
 
+/* Msg sending */
+
+StaticJsonDocument<JSON_BYTE_SIZE> json_msg;
+StaticJsonDocument<JSON_BYTE_SIZE> json_obs;
+char json[] = "{\"mode\":0,\"id\":1,\"robot\":{\"px\":0,\"py\":0,\"v\":0,\"th\":0}}";
+char json_obs_char[] = "{\"obs\":[\"empty\", \"empty\", \"empty\", \"empty\", \"empty\"]}";
+DeserializationError error = deserializeJson(json_msg, json);
+DeserializationError error_obs = deserializeJson(json_obs, json_obs_char);
+JsonObject robot = json_msg["robot"];
+//JsonArray obs_point = json_msg.createNestedArray("obs");
+
+
+void loop() {
+  if(millis()%5000 > 2500){
+    right_pwm = 40;
+    left_pwm = 60;
+  }
+  else{
+    right_pwm = 60;
+    left_pwm = 40;
+  }
+    robot["px"] = present.x;
+    robot["py"] = present.y;
+    robot["v"]  = present.v;
+    robot["th"] = present.theta;
+
+    ladar_scan(present);
     
     #ifdef ENABLE_WIFI
     if(timer_update.update()){
-      send_update(present.x, present.y, present.v, present.theta);
+        for(int i = 0; i<5; i++){
+            if(obs_qu.isEmpty()) {
+                if(i < json_obs.size())  json_obs[i] = String("empty");
+            }
+            else{
+                Obs oldest = obs_qu.dequeue();
+                String s = "{" + String(oldest.p.x) + "," + String(oldest.p.y) + "," + String(oldest.v) + "}";
+                //if(i < json_obs.size())  
+                json_obs["obs"][i] = s;
+                //else                     json_obs.add(s);
+                Serial.println(json_obs.size());
+                Serial.println(s);
+            }
+        }
+        send_json(json_msg, json_obs);
     }
     #endif
+    
+    /*
     Serial.print("cmd: ");
-    Serial.print(right_pwm);
-    Serial.print(", ");
     Serial.print(left_pwm);
-    Serial.print(", err: ");
-    Serial.print(r_out);
     Serial.print(", ");
+    Serial.print(right_pwm);
+    Serial.print(", err: ");
     Serial.print(l_out);
-    //Serial.print(", ");
-    //Serial.print(e_theta);
+    Serial.print(", ");
+    Serial.print(r_out);
     Serial.print(", pos: ");
     Serial.print(present.x);
     Serial.print(", ");
     Serial.print(present.y);
     Serial.print(", ");
-    //Serial.print(target.theta);
-    Serial.print(",  Velocity: ");
-    Serial.print(Car_rotary_offset[RIGHT_MOTOR]);
+    Serial.print(present.theta);
     Serial.print(", ");
-    Serial.println(Car_rotary_offset[LEFT_MOTOR]);
+    Serial.print(",  Velocity: ");
+    Serial.print(Car_rotary_offset[LEFT_MOTOR]);
+    Serial.print(", ");
+    Serial.println(Car_rotary_offset[RIGHT_MOTOR]);
+    */
+    
     /*
     String msg = "";
     msg += present.x;
     msg += ",";
     msg += present.y;
     send_data(msg);*/
-    /*
-    Serial.print(", present: ");
-    Serial.print(present.x);
-    Serial.print(", ");
-    Serial.print(present.y);
-    Serial.print(", ");
-    Serial.println(present.theta);*//*
-                                     Serial.print(r_out);
-                                     Serial.print(", ");
-                                     Serial.print(l_out);
-                                     Serial.print(", Position: ");
-                                     Serial.print(Car_position[X_AXIS]);
-                                     Serial.print(", ");
-                                     Serial.print(Car_position[Y_AXIS]);
-                                     Serial.print(",  Theta: ");
-                                     Serial.print(Car_theta);
-                                     Serial.print(",  Velocity: ");
-                                     Serial.print(Car_rotary_offset[RIGHT_MOTOR]);
-                                     Serial.print(", ");
-                                     Serial.println(Car_rotary_offset[LEFT_MOTOR]);
-    /*
-    Serial.print(wr_cmd);
-    Serial.print(", ");
-    Serial.println(wl_cmd);*/
     //delay(25);
     /*
        if(right_motor_speed > 0){
@@ -418,4 +456,87 @@ void loop() {
        portEXIT_CRITICAL(&timerMux);
        Serial.println("hey");
        }*/
+}
+bool servo_flag = true;
+bool sonar_flag = true;
+unsigned long servo_delay = 200;
+
+/* Env scan*/
+void ladar_scan(const Car &car){
+    static double now_angle = ULTRA_SERVO_MIN;
+    static int offset_angle = 10;
+    Point p;
+    Obs obs;
+    if(move_servo(now_angle, offset_angle, car, obs))
+        obs_qu.enqueue(obs);
+    else{
+        if(now_angle > ULTRA_SERVO_MAX)      offset_angle = -10;
+        else if(now_angle < ULTRA_SERVO_MIN) offset_angle = 10;
+        //return obs;
+    }
+}
+
+bool move_servo(double &angle, double offset, const Car &car, Obs &obs){
+    static unsigned long start_time = millis();
+    if(sonar_flag && servo_flag){ // ok
+        ultraA.write((int)angle);
+        start_time = millis();
+        servo_flag = false;
+    }
+    else if(!sonar_flag && servo_flag){ 
+        ultraA.write((int)angle);  // sonar running, servo ready
+    }
+    else if(!servo_flag && millis() >= start_time + servo_delay){ // servo complete
+        servo_flag = true;
+        angle += offset;
+        double dis = get_distance();
+        obs.p.x = dis * cos(angle);
+        obs.p.y = dis * sin(angle);
+        if(dis < ULTRA_MAX_DIS) obs.v = MAP_STATUS_OCCUPIED;
+        else                    obs.v = MAP_STATUS_UNKNOWN;
+        /*
+        Serial.print("Angle:");
+        Serial.print(angle);
+        Serial.print(",");
+        Serial.println(dis);*/
+        return true;
+    }
+    return false;
+}
+
+#include <math.h>
+/* Scan distance with spesified global target angle 
+ * Return False, if servo angle excceed range
+ * Update the parameter dis 
+ * Update the parameter angle, if specified angle exceed allowable value*/
+bool env_scan(double &angle, double offset, const Car &car, double &dis){/*
+    double servo_angle;
+    double diff = fmod(angle, 360) - fmod(360*car.theta, 360);
+    if(abs(diff) < 90)
+        servo_angle = diff + 90;
+    else return false;*/
+    
+    //double pre_angle = ultraA.read();
+    //ultraA.write(servo_angle);
+    ultraA.write(angle);
+    delay(100);
+    angle += offset;
+    //delay((servo_angle - pre_angle)*ULTRA_TURN_RATIO);
+    dis = get_distance();
+    Serial.println(dis);
+    return true;
+}
+/* Blocked until receive ultrasonic */
+double get_distance(){
+    digitalWrite(ultraA_trig, LOW);
+    delayMicroseconds(2);
+    digitalWrite(ultraA_trig, HIGH);
+    delayMicroseconds(ULTRA_INIT_DELAY);
+    digitalWrite(ultraA_trig, LOW);
+    //double dur = pulseIn(ultraA_echo, HIGH);
+    double dur = pulseIn(ultraA_echo, HIGH, ULTRA_MAX_DIS/0.017);
+    //double dur = 100;
+    double dis = dur * 0.034 / 2;
+    if(dis < ULTRA_MAX_DIS) return dis;
+    return ULTRA_MAX_DIS;
 }

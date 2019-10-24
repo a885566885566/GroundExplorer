@@ -47,10 +47,20 @@ def main():
     position[0] = [2, 2]
     pre_speed = [0, 0]
     last =  position.shape[0]
+    pre_norm_accer = 0
     for i in range(1, position.shape[0]):
         accer = calField(obstacles, position[i-1], m=robot_m, p=obs_decay)
         target_accer = calField(obstacles, position[i-1], m=robot_m, p=2, mode=1)
         accer += target_accer
+        
+        norm_accer = np.linalg.norm(accer)
+        change_rate = norm_accer - pre_norm_accer
+        pre_norm_accer = norm_accer
+        if( change_rate < -0.1):
+            print(change_rate)
+
+        accer = accer / norm_accer
+
         speed =  pre_speed + accer * time_slice
         position[i] = position[i-1] + speed * time_slice
         pre_speed = 0.8*speed

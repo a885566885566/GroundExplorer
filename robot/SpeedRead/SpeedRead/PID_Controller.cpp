@@ -20,7 +20,8 @@ int PID_Controller::update(double vcmd, double current){
     D = KD * (ERR - preERR) / INTERRUPT_INTERVAL;
     preERR = ERR;
     pwm=G;
-    //pwm = limit_output(G) + limit_output(In) + limit_output(D);
+    pwm = limit_output(G) + limit_output(In) + limit_output(D);
+    pwm = limit_output(pwm);
     /*
     if( abs(pwm) < INTERGRAL_SAT ) T = 0;
     else{

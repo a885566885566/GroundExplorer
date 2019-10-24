@@ -40,5 +40,6 @@ app.router.add_route('*', '/esp_data', esp)
 
 
 if __name__ == '__main__':
-    web.run_app(app, host='localhost', port=10418)
+    web.run_app(app, host='0.0.0.0', port=10418)
     print("Server running...")
+    print("hello")

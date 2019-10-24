@@ -3,6 +3,7 @@
 #include <WiFi.h>
 #include "ServerConnection.h"
 #include "constants.h"
+#include <ArduinoJson.h>
 
 #define ssid "e94066157-X550VQ"
 #define password "bpbfXOHT"
@@ -71,6 +72,30 @@ void send_update(double px, double py, double v, double th){
         LOG("send");
         client.println(msg_buf);
         //client.println();
+    }
+    LOG("leave");
+}
+void send_json(StaticJsonDocument<JSON_BYTE_SIZE> &msg, StaticJsonDocument<JSON_BYTE_SIZE> &obs){
+    if(WiFi.status() != WL_CONNECTED){
+        ERROR("Wifi disconnected!");
+    }
+    else{
+        if (!client.connect(host, port)) {
+            ERROR("Connection to host failed");
+            return;
+        }
+        char s[STRING_BUFFER_SIZE];
+        serializeJson(msg, s, STRING_BUFFER_SIZE);
+        char c[STRING_BUFFER_SIZE];
+        serializeJson(obs, c, STRING_BUFFER_SIZE);
+        client.print(F("GET /esp_data?data="));
+        client.print(s);
+        client.println(c);
+        client.println();
+        Serial.println(s);
+        Serial.println(c);
+        LOG("send");
+        LOG(s);
     }
     LOG("leave");
 }

@@ -24,6 +24,8 @@ def index(path):
 @app.route('/esp_data')
 def esp():
     print("Get esp")
+    print(request.args.get('data'))
+
     car_info['id'] = request.args.get('id')
     car_info['px'] = request.args.get('px')
     car_info['py'] = request.args.get('py')
